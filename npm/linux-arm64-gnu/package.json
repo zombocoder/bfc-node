@@ -1,0 +1,22 @@
+{
+  "name": "@bfc-node/linux-arm64-gnu",
+  "version": "0.1.0",
+  "description": "Prebuilt BFC native addon for linux arm64 (glibc)",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zombocoder/bfc-node.git"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bfc_node.node",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ]
+}

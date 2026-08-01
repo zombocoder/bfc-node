@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "dist"
+    // Emitted declarations keep the "./errors.ts" specifiers the sources use.
+    // TypeScript resolves those to the sibling errors.d.ts, which `npm run
+    // check:dts` proves against a nodenext consumer with skipLibCheck off.
+  }
+}

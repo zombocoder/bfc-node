@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One broken platform must not hide the state of the other three.
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-14
+          - target: linux-x64-gnu
+            runner: ubuntu-22.04
+          - target: linux-arm64-gnu
+            runner: ubuntu-22.04-arm
+          - target: win32-x64-msvc
+            runner: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # npm 10 records only the current platform's optional binaries in the
+      # lockfile, so `npm ci` on Linux cannot find @rollup/rollup-linux-*.
+      # npm 11 records every platform; the committed lockfile is generated with it.
+      - name: Pin npm 11
+        run: npm install -g npm@11
+
+      # libsodium has no CMake build on Windows; it is built from its bundled
+      # Visual Studio project, and msbuild is not on PATH by default.
+      - name: Set up MSBuild
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+
+      # Only the autotools path needs these; Windows builds libsodium with MSBuild.
+      - name: Install autotools
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install autoconf automake libtool
+          else
+            sudo apt-get update
+            sudo apt-get install -y autoconf automake libtool
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and test
+        run: npm run ci
+
+      - name: Assert no dynamic dependency on the vendored libraries
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # No otool or ldd here. A dynamically linked build would have to ship
+            # the zstd and libsodium DLLs beside the addon, so their absence is
+            # the equivalent check.
+            DLLS=$(find build/Release -name '*.dll' 2>/dev/null || true)
+            if [ -n "$DLLS" ]; then
+              echo "::error::unexpected DLLs beside the addon: $DLLS"
+              exit 1
+            fi
+            echo "no DLLs beside bfc_node.node"
+            exit 0
+          fi
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            LINKAGE=$(otool -L build/Release/bfc_node.node)
+          else
+            LINKAGE=$(ldd build/Release/bfc_node.node)
+          fi
+          echo "$LINKAGE"
+          if echo "$LINKAGE" | grep -Ei 'libzstd|libsodium|libbfc'; then
+            echo "::error::addon links a vendored library dynamically; it must be static"
+            exit 1
+          fi

@@ -1,0 +1,58 @@
+{
+  "name": "@bfc-node/core",
+  "version": "0.1.0",
+  "description": "Node.js bindings for BFC — a single-file container format with POSIX metadata, compression and encryption",
+  "license": "Apache-2.0",
+  "author": "zombocoder",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zombocoder/bfc-node.git"
+  },
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "keywords": [
+    "bfc",
+    "archive",
+    "container",
+    "zstd",
+    "encryption",
+    "native",
+    "napi"
+  ],
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "scripts": {
+    "test": "node --import tsx --test \"test/**/*.test.mjs\" \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "check:dts": "tsc -p test/dts/tsconfig.json",
+    "check:drift": "node scripts/check-drift.mjs",
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "build:native": "cmake-js compile --CDCMAKE_BUILD_TYPE=Release",
+    "clean:native": "cmake-js clean",
+    "ci": "npm run check:drift && npm run build:native && npm run build && npm run typecheck && npm run check:dts && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "cmake-js": "8.0.0",
+    "node-addon-api": "8.9.1",
+    "tsup": "8.5.1",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,218 @@
+name: Release
+
+# Manual only. Publishing to npm is irreversible for a given version, so the
+# release is never triggered by a push — you pick the tag and start it.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to release, e.g. v0.1.0 (must already exist)"
+        required: true
+        type: string
+      dry_run:
+        description: "Build and verify everything, but do not publish"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance
+
+jobs:
+  validate:
+    name: validate ${{ inputs.tag }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag looks like a version and exists
+        shell: bash
+        env:
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          if ! printf '%s' "$TAG_NAME" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "::error::'$TAG_NAME' is not a version tag like v0.1.0"
+            exit 1
+          fi
+          if ! git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
+            echo "::error::tag '$TAG_NAME' does not exist — create and push it first"
+            exit 1
+          fi
+
+      - name: Check the tag matches package.json at that tag
+        shell: bash
+        env:
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          PKG=$(git show "refs/tags/$TAG_NAME:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          if [ "${TAG_NAME#v}" != "$PKG" ]; then
+            echo "::error::tag ${TAG_NAME#v} does not match package.json version $PKG at that tag"
+            exit 1
+          fi
+          echo "releasing version $PKG"
+
+  build:
+    needs: validate
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # A release is all-or-nothing: never publish a partial platform matrix.
+      fail-fast: true
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-14
+          - target: linux-x64-gnu
+            runner: ubuntu-22.04
+          - target: linux-arm64-gnu
+            runner: ubuntu-22.04-arm
+          - target: win32-x64-msvc
+            runner: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # See ci.yml: npm 10 lockfiles omit other platforms' optional binaries.
+      - name: Pin npm 11
+        run: npm install -g npm@11
+
+      # libsodium has no CMake build on Windows; it is built from its bundled
+      # Visual Studio project, and msbuild is not on PATH by default.
+      - name: Set up MSBuild
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+
+      # Only the autotools path needs these; Windows builds libsodium with MSBuild.
+      - name: Install autotools
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install autoconf automake libtool
+          else
+            sudo apt-get update
+            sudo apt-get install -y autoconf automake libtool
+          fi
+
+      - run: npm ci
+      - run: npm run ci
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: build/Release/bfc_node.node
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Pin npm 11
+        run: npm install -g npm@11
+
+      - run: npm ci --ignore-scripts
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Assemble platform packages
+        run: node scripts/assemble-packages.mjs artifacts
+
+      # Absent from the committed package.json so that `npm ci` works before
+      # these packages exist on the registry; see the script's comment.
+      - name: Inject optionalDependencies
+        run: node scripts/apply-optional-deps.mjs
+
+      - name: Build dist
+        run: npm run build
+
+      - name: Show what would be published
+        shell: bash
+        run: |
+          for dir in npm/*/ .; do
+            echo "--- $dir"
+            npm pack --dry-run "$dir" 2>&1 | tail -20
+          done
+
+      # Platform packages go first: the main package's optionalDependencies
+      # must already be resolvable when it appears in the registry.
+      - name: Publish platform packages
+        if: ${{ !inputs.dry_run }}
+        run: |
+          for dir in npm/*/; do
+            npm publish "$dir" --access public --provenance
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @bfc-node/core
+        if: ${{ !inputs.dry_run }}
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  smoke:
+    needs: publish
+    if: ${{ !inputs.dry_run }}
+    name: smoke ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14, ubuntu-22.04, ubuntu-22.04-arm, windows-2022]
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The whole point of the project: a clean directory, no compiler, no Git.
+      - name: Install the published package in a clean directory
+        shell: bash
+        env:
+          TAG_NAME: ${{ inputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
+          npm init -y >/dev/null
+          for i in 1 2 3 4 5; do
+            npm install "@bfc-node/core@${TAG_NAME#v}" && break
+            echo "registry not ready yet, retrying..."
+            sleep 15
+          done
+
+      - name: Run the documented example
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/smoke"
+          mkdir -p dist && echo "<h1>hi</h1>" > dist/index.html
+          cat > run.mjs <<'EOF'
+          import { createArchive, openArchive, buildInfo } from "@bfc-node/core";
+
+          await createArchive({ output: "./frontend.bfc", inputs: ["./dist"] });
+
+          const archive = await openArchive("./frontend.bfc");
+          const entries = await archive.list();
+          if (entries.length === 0) throw new Error("archive is empty");
+          await archive.close();
+
+          console.log(buildInfo);
+          EOF
+          node run.mjs

@@ -1,0 +1,18 @@
+bfc-node
+Copyright 2026 zombocoder
+
+This product includes software developed as part of the following projects:
+
+- BFC (https://github.com/zombocoder/bfc)
+  Copyright 2021 zombocoder
+  Licensed under the Apache License, Version 2.0.
+
+- Zstandard (https://github.com/facebook/zstd)
+  Copyright (c) Meta Platforms, Inc. and affiliates.
+  Licensed under the BSD 3-Clause License.
+
+- libsodium (https://github.com/jedisct1/libsodium)
+  Copyright (c) 2013-2025 Frank Denis
+  Licensed under the ISC License.
+
+Prebuilt platform packages statically link the libraries listed above.
