@@ -11,9 +11,7 @@ export interface Entry {
   mtimeNs: bigint;
   mtime: Date;
   size: number;
-  /** Only reliable from `stat()`; `list()` always reports "none" (see README). */
   compression: CompressionName;
-  /** Only reliable from `stat()`; `list()` always reports "none" (see README). */
   encryption: EncryptionName;
   crc32c: number;
   objOffset: bigint;

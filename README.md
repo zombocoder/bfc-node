@@ -173,17 +173,16 @@ parallel. Every heavy operation runs on the libuv thread pool and does not block
 event loop.
 
 **Integrity.** `verify({ deep: true })` and `extract()` validate CRC32C and fail with
-`CRC` on corruption. `read()` does **not**: it supports arbitrary offsets, and a partial
-slice cannot be checked against the whole-object checksum. Use `verify` or `extract` when
-integrity matters.
+`CRC` on corruption, compressed and encrypted entries included. When an archive is
+encrypted and no key was supplied, `verify({ deep: true })` reports `PERM`: the content
+could not be checked, which is a different statement from finding it corrupt. `read()`
+does **not** validate — it supports arbitrary offsets, and a partial slice cannot be
+checked against the whole-object checksum. Use `verify` or `extract` when integrity
+matters.
 
 **Extraction safety.** Archives are untrusted input. `extractAll` resolves every entry
 path before writing anything and rejects with `INVAL` if one would land outside the
 destination directory.
-
-**`entry.compression` and `entry.encryption`** are only reliable from `stat()`. Upstream
-`bfc_list` does not populate the encryption field, so `list()` always reports `"none"`
-there.
 
 **Determinism.** `createArchive` sorts entries by path, so repeated runs over an
 unchanged tree store the same entries in the same order.

@@ -1,6 +1,6 @@
 {
   "name": "@bfc-node/linux-x64-gnu",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Prebuilt BFC native addon for linux x64 (glibc)",
   "license": "Apache-2.0",
   "repository": {
