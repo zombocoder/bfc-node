@@ -19,7 +19,7 @@ class Archive : public Napi::ObjectWrap<Archive> {
   Napi::Value List(const Napi::CallbackInfo& info);
   Napi::Value Stat(const Napi::CallbackInfo& info);
   Napi::Value Read(const Napi::CallbackInfo& info);
-  Napi::Value ExtractToFd(const Napi::CallbackInfo& info);
+  Napi::Value ExtractToFile(const Napi::CallbackInfo& info);
   Napi::Value Verify(const Napi::CallbackInfo& info);
   Napi::Value SetEncryptionPassword(const Napi::CallbackInfo& info);
   Napi::Value SetEncryptionKey(const Napi::CallbackInfo& info);

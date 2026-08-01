@@ -1,5 +1,13 @@
 #include "archive.h"
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <algorithm>
 #include <cstdint>
 #include <memory>
@@ -170,11 +178,33 @@ class ReadWorker : public BfcAsyncWorker {
   std::vector<uint8_t> data_;
 };
 
-class ExtractToFdWorker : public BfcAsyncWorker {
+// Open the destination here rather than accepting a descriptor from JavaScript.
+// On Windows the addon links the static CRT, which keeps its own file
+// descriptor table, so a descriptor created by Node is meaningless to us and
+// every write fails with EBADF (surfacing as BFC_E_IO).
+int OpenForWrite(const char* path) {
+#ifdef _WIN32
+  return _open(path, _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY,
+               _S_IREAD | _S_IWRITE);
+#else
+  return open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+#endif
+}
+
+void CloseFd(int fd) {
+#ifdef _WIN32
+  _close(fd);
+#else
+  close(fd);
+#endif
+}
+
+class ExtractToFileWorker : public BfcAsyncWorker {
  public:
-  ExtractToFdWorker(Napi::Env env, HandlePtr handle, std::string path, int fd)
+  ExtractToFileWorker(Napi::Env env, HandlePtr handle, std::string path,
+                      std::string dest_path)
       : BfcAsyncWorker(env), handle_(std::move(handle)), path_(std::move(path)),
-        fd_(fd) {}
+        dest_path_(std::move(dest_path)) {}
 
  protected:
   void Execute() override {
@@ -183,7 +213,16 @@ class ExtractToFdWorker : public BfcAsyncWorker {
       Fail(kErrClosed, "archive is closed");
       return;
     }
-    int rc = bfc_extract_to_fd(handle_->raw, path_.c_str(), fd_);
+
+    int fd = OpenForWrite(dest_path_.c_str());
+    if (fd < 0) {
+      Fail(BFC_E_IO, "failed to open destination file", dest_path_);
+      return;
+    }
+
+    int rc = bfc_extract_to_fd(handle_->raw, path_.c_str(), fd);
+    CloseFd(fd);
+
     if (rc != BFC_OK) {
       Fail(rc, "failed to extract entry", path_);
     }
@@ -192,7 +231,7 @@ class ExtractToFdWorker : public BfcAsyncWorker {
  private:
   HandlePtr handle_;
   std::string path_;
-  int fd_;
+  std::string dest_path_;
 };
 
 class VerifyWorker : public BfcAsyncWorker {
@@ -227,7 +266,7 @@ Napi::Function Archive::Init(Napi::Env env) {
       InstanceMethod<&Archive::List>("list"),
       InstanceMethod<&Archive::Stat>("stat"),
       InstanceMethod<&Archive::Read>("read"),
-      InstanceMethod<&Archive::ExtractToFd>("extractToFd"),
+      InstanceMethod<&Archive::ExtractToFile>("extractToFile"),
       InstanceMethod<&Archive::Verify>("verify"),
       InstanceMethod<&Archive::SetEncryptionPassword>("setEncryptionPassword"),
       InstanceMethod<&Archive::SetEncryptionKey>("setEncryptionKey"),
@@ -282,11 +321,11 @@ Napi::Value Archive::Read(const Napi::CallbackInfo& info) {
   return worker->Promise();
 }
 
-Napi::Value Archive::ExtractToFd(const Napi::CallbackInfo& info) {
-  auto* worker = new ExtractToFdWorker(
+Napi::Value Archive::ExtractToFile(const Napi::CallbackInfo& info) {
+  auto* worker = new ExtractToFileWorker(
       info.Env(), handle_,
       info[0].As<Napi::String>().Utf8Value(),
-      info[1].As<Napi::Number>().Int32Value());
+      info[1].As<Napi::String>().Utf8Value());
   worker->Queue();
   return worker->Promise();
 }

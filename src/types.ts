@@ -113,7 +113,8 @@ export interface NativeArchive {
   stat(containerPath: string): Promise<NativeEntry>;
   /** `length === -1` means "to the end of the entry". */
   read(containerPath: string, offset: number, length: number): Promise<Buffer>;
-  extractToFd(containerPath: string, fd: number): Promise<void>;
+  /** The addon opens `destPath` itself — see Archive.extract for why. */
+  extractToFile(containerPath: string, destPath: string): Promise<void>;
   verify(deep: boolean): Promise<void>;
   setEncryptionPassword(password: string): void;
   setEncryptionKey(key: Uint8Array): void;

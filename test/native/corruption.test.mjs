@@ -56,21 +56,16 @@ test("shallow verify only checks the index, so it passes on corrupted content", 
   });
 });
 
-test("extractToFd refuses corrupted content with code CRC", async () => {
+test("extractToFile refuses corrupted content with code CRC", async () => {
   await withTempDir(async (dir) => {
     const archive = await native.Archive.open(await makeCorruptedArchive(dir));
-    const handle = await open(join(dir, "out.bin"), "w");
-    try {
-      await assert.rejects(
-        () => archive.extractToFd("data.txt", handle.fd),
-        (err) => {
-          assert.equal(err.code, "CRC");
-          return true;
-        },
-      );
-    } finally {
-      await handle.close();
-    }
+    await assert.rejects(
+      () => archive.extractToFile("data.txt", join(dir, "out.bin")),
+      (err) => {
+        assert.equal(err.code, "CRC");
+        return true;
+      },
+    );
     archive.close();
   });
 });

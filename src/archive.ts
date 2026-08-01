@@ -1,4 +1,4 @@
-import { mkdir, open } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { BfcError } from "./errors.ts";
@@ -62,12 +62,9 @@ export class Archive {
   /** Write one entry to `destPath`, creating parent directories. Validates CRC. */
   async extract(containerPath: string, destPath: string): Promise<void> {
     await mkdir(dirname(destPath), { recursive: true });
-    const handle = await open(destPath, "w");
-    try {
-      await this.#native.extractToFd(containerPath, handle.fd);
-    } finally {
-      await handle.close();
-    }
+    // The addon opens the destination itself; a descriptor from here would be
+    // useless to it on Windows, where the static CRT has its own fd table.
+    await this.#native.extractToFile(containerPath, destPath);
   }
 
   /**

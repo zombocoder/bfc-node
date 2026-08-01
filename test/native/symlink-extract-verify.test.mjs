@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
-import { open, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { loadNative } from "../helpers/native.mjs";
 import { withTempDir } from "../helpers/tmp.mjs";
 
@@ -31,17 +31,12 @@ test("stores symlinks with their target readable as content", async () => {
   });
 });
 
-test("extractToFd writes entry content to the given descriptor", async () => {
+test("extractToFile writes entry content to the given path", async () => {
   await withTempDir(async (dir) => {
     const archive = await native.Archive.open(await buildArchive(dir));
 
     const dest = join(dir, "out.md");
-    const handle = await open(dest, "w");
-    try {
-      await archive.extractToFd("readme.md", handle.fd);
-    } finally {
-      await handle.close();
-    }
+    await archive.extractToFile("readme.md", dest);
 
     assert.equal(await readFile(dest, "utf8"), "# hi\n");
     archive.close();
@@ -57,21 +52,16 @@ test("verify passes on a freshly written archive, shallow and deep", async () =>
   });
 });
 
-test("extractToFd rejects with NOT_FOUND for a missing entry", async () => {
+test("extractToFile rejects with NOT_FOUND for a missing entry", async () => {
   await withTempDir(async (dir) => {
     const archive = await native.Archive.open(await buildArchive(dir));
-    const handle = await open(join(dir, "out2.md"), "w");
-    try {
-      await assert.rejects(
-        () => archive.extractToFd("missing", handle.fd),
-        (err) => {
-          assert.equal(err.code, "NOT_FOUND");
-          return true;
-        },
-      );
-    } finally {
-      await handle.close();
-    }
+    await assert.rejects(
+      () => archive.extractToFile("missing", join(dir, "out2.md")),
+      (err) => {
+        assert.equal(err.code, "NOT_FOUND");
+        return true;
+      },
+    );
     archive.close();
   });
 });
